@@ -93,7 +93,7 @@ jobs:
         run: rm -rf ${{env.BUILD_DIR}}
         
       - name: Setup NuGet
-        uses: NuGet/setup-nuget@v2
+        uses: NuGet/setup-nuget@v4
 
       - name: Checkout code
         uses: actions/checkout@v7
