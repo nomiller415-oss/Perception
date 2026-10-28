@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+
 //==============================================================================
 PluginProcessor::PluginProcessor()
      : AudioProcessor (BusesProperties()
@@ -10,7 +11,11 @@ PluginProcessor::PluginProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
+                      apvts (*this,
+                          nullptr,
+                          "PARAMETERS",
+                          createParameterLayout())
 {
 }
 
@@ -89,13 +94,17 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
-    juce::ignoreUnused (sampleRate, samplesPerBlock);
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = static_cast<juce::uint32> (samplesPerBlock);
+    spec.numChannels = static_cast<juce::uint32> (getTotalNumOutputChannels());
+
+    eqEngine.prepare (spec);
 }
 
 void PluginProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+    eqEngine.reset();
 }
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -129,14 +138,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    eqEngine.updateParameters (*apvts.getRawParameterValue (ParamIDs::body), 
+        *apvts.getRawParameterValue (ParamIDs::warmth));
+    eqEngine.process (buffer);
 
     // This is the place where you'd normally do the guts of your plugin's
     // audio processing...
@@ -166,17 +170,31 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 //==============================================================================
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-    juce::ignoreUnused (destData);
+    
+    auto state = apvts.copyState();
+
+    std::unique_ptr<juce::XmlElement> xml (
+        state.createXml());
+
+    copyXmlToBinary (*xml, destData);
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
-    juce::ignoreUnused (data, sizeInBytes);
+    std::unique_ptr<juce::XmlElement> xml (
+        getXmlFromBinary (data,
+            sizeInBytes));
+
+    if (xml.get() != nullptr)
+    {
+        if (xml->hasTagName (
+                apvts.state.getType()))
+        {
+            apvts.replaceState (
+                juce::ValueTree::fromXml (
+                    *xml));
+        }
+    }
 }
 
 //==============================================================================
@@ -184,4 +202,36 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new PluginProcessor();
+}
+
+juce::AudioProcessorValueTreeState::ParameterLayout
+PluginProcessor::createParameterLayout()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+    layout.add (std::make_unique<juce::AudioParameterFloat>(
+        ParamIDs::body, "Body", juce::NormalisableRange<float> (
+            -100.0f, 100.0f, 1.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat>(
+        ParamIDs::warmth, "Warmth", juce::NormalisableRange<float> (
+            -100.0f, 100.0f, 1.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat>(
+        ParamIDs::presence, "Presence", juce::NormalisableRange<float> (
+            -100.0f, 100.0f, 1.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat>(
+        ParamIDs::air, "Air", juce::NormalisableRange<float> (
+            -100.0f, 100.0f, 1.0f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        ParamIDs::output, "Output", juce::NormalisableRange<float> (
+            -24.0f, 24.0f, 0.1f), 0.0f));
+
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        ParamIDs::bypass,"Bypass",false));
+
+
+    return layout;
 }

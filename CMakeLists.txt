@@ -17,7 +17,7 @@ include(JUCEDefaults)
 # This is the internal name of the project and the name of JUCE's shared code target
 # Note: This cannot have spaces (it may be 2024, but you can't have it all!)
 # Worry not, JUCE's PRODUCT_NAME can have spaces (and is what DAWs display)
-set(PROJECT_NAME "NewProject")
+set(PROJECT_NAME "Perception")
 
 # Worry not, JUCE's PRODUCT_NAME can have spaces (and is what DAWs will display)
 # You can also just have it be the same thing as PROJECT_NAME
@@ -25,13 +25,13 @@ set(PROJECT_NAME "NewProject")
 #   set(PROJECT_NAME "MyPlugin_v${MAJOR_VERSION}")
 # Doing so enables major versions to show up in IDEs and DAWs as separate plugins
 # allowing you to change parameters and behavior without breaking existing user projects
-set(PRODUCT_NAME "New Product")
+set(PRODUCT_NAME "Perception")
 
 # Change me! Used for the MacOS bundle name and Installers
 set(COMPANY_NAME "Noah Miller")
 
 # Change me! Used for the MacOS bundle identifier (and signing)
-set(BUNDLE_ID "com.Noah.Miller")
+set(BUNDLE_ID "com.Perception.NoahMiller")
 
 # Change me! Set the plugin formats you want built
 # Valid choices: AAX Unity VST VST3 AU AUv3 Standalone
@@ -66,44 +66,15 @@ add_subdirectory(modules/clap-juce-extensions EXCLUDE_FROM_ALL)
 # This adds the melatonin inspector module
 add_subdirectory (modules/melatonin_inspector)
 
-if(MSVC)
-    set(NUGET_DIR "${CMAKE_BINARY_DIR}/nuget")
-    set(NUGET_EXE "${NUGET_DIR}/nuget.exe")
-    set(PACKAGES_DIR "${CMAKE_BINARY_DIR}/packages")
-
-    if(NOT EXISTS "${NUGET_EXE}")
-        message(STATUS "[WebView2] Downloading nuget.exe...")
-        file(MAKE_DIRECTORY "${NUGET_DIR}")
-        file(DOWNLOAD "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" "${NUGET_EXE}")
-    endif()
-
-    set(WEBVIEW2_VERSION "1.0.1901.177")
-    
-    find_program(NUGET_EXE NAMES nuget REQUIRED)
-    
-    # Download the package to the build directory
-    execute_process(
-        COMMAND ${NUGET_EXE} install Microsoft.Web.WebView2 -OutputDirectory "${CMAKE_BINARY_DIR}/packages"
-    )
-    
-    # Point JUCE to the exact folder containing the downloaded NuGet package
-    set(JUCE_WEBVIEW2_PACKAGE_LOCATION "${CMAKE_BINARY_DIR}/packages")
-endif()
-
-if(MSVC OR WIN32)
-    set(USE_WEBVIEW2_BACKEND TRUE)
-else()
-    set(USE_WEBVIEW2_BACKEND FALSE)
-endif()
 
 # See `docs/CMake API.md` in the JUCE repo for all config options
 juce_add_plugin("${PROJECT_NAME}"
     # Icons for the standalone app
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icon.png"
 
-    NEEDS_WEBVIEW2 TRUE
-    NEEDS_WEB_BROWSER TRUE
-    NEEDS_LINUX_SUBPROCESS_HELPER TRUE 
+    NEEDS_WEBVIEW2 FALSE
+    NEEDS_WEB_BROWSER FALSE
+    NEEDS_LINUX_SUBPROCESS_HELPER FALSE 
     # Change me!
     COMPANY_NAME "${COMPANY_NAME}"
     BUNDLE_ID "${BUNDLE_ID}"
@@ -160,7 +131,7 @@ target_compile_definitions(SharedCode
     INTERFACE
 
     # JUCE_WEB_BROWSER and JUCE_USE_CURL off by default
-    JUCE_WEB_BROWSER=1   # <-- set to 1 so WebBrowserComponent is compiled in
+    JUCE_WEB_BROWSER=0   # <-- set to 1 so WebBrowserComponent is compiled in
     JUCE_USE_CURL=0     # If you set this to 1, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call
     JUCE_VST3_CAN_REPLACE_VST2=0
 
@@ -172,7 +143,7 @@ target_compile_definitions(SharedCode
     VERSION="${CURRENT_VERSION}"
 
     # JucePlugin_Name is for some reason doesn't use the nicer PRODUCT_NAME
-    PRODUCT_NAME_WITHOUT_VERSION="Pamplejuce"
+    PRODUCT_NAME_WITHOUT_VERSION="Perception"
 )
 
 # Link to any other modules you added (with juce_add_module) here!
@@ -182,7 +153,6 @@ target_compile_definitions(SharedCode
 # This allows the JUCE plugin targets and the Tests target to link against it
 target_link_libraries(SharedCode
     INTERFACE
-    Assets
     melatonin_inspector
     juce_audio_utils
     juce_audio_processors
@@ -196,42 +166,6 @@ target_link_libraries(SharedCode
 
 # Link the JUCE plugin targets our SharedCode target
 target_link_libraries("${PROJECT_NAME}" PRIVATE SharedCode)
-
-# --- LINUX GTK & WEBKIT INJECTION ---
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    find_package(PkgConfig REQUIRED)
-    
-    pkg_check_modules(WEBKIT_GTK webkit2gtk-4.1)
-    if(NOT WEBKIT_GTK_FOUND)
-        pkg_check_modules(WEBKIT_GTK REQUIRED webkit2gtk-4.0)
-    endif()
-    pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
-
-    # Force system paths globally so JUCE internal modules resolve <gtk/gtk.h>
-    include_directories(SYSTEM 
-        ${GTK3_INCLUDE_DIRS}
-        ${WEBKIT_GTK_INCLUDE_DIRS}
-    )
-
-    # TARGET SPECIFIC RECOVERY LOOP:
-    # We iterate over the actual binary outputs (e.g., NewProject_Standalone)
-    # to register dependencies. This forces JUCE to execute juceaide on a concrete binary target!
-    foreach(format ${FORMATS})
-        set(target_format_name "${PROJECT_NAME}_${format}")
-        
-        if(TARGET ${target_format_name})
-            # Force compile flags & link properties to physical binaries
-            target_compile_options(${target_format_name} PRIVATE ${WEBKIT_GTK_CFLAGS_OTHER} ${GTK3_CFLAGS_OTHER})
-            target_link_libraries(${target_format_name} PRIVATE ${WEBKIT_GTK_LIBRARIES} ${GTK3_LIBRARIES})
-            
-            # Map JUCE's configuration property path specifically to this concrete target
-            target_include_directories(${target_format_name} PRIVATE
-                "${CMAKE_CURRENT_BINARY_DIR}/JUCE/modules/juce_gui_extra/juce_LinuxSubprocessHelper/$<CONFIG>"
-                "${CMAKE_CURRENT_BINARY_DIR}/juce_LinuxSubprocessHelper/$<CONFIG>/"
-            )
-        endif()
-    endforeach()
-endif()
 
 
 # IPP support, comment out to disable
